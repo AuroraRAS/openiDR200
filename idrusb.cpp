@@ -1,6 +1,7 @@
 #include "idrusb.h"
 
 #include <arpa/inet.h>
+#include <iconv.h>
 
 IDRUSB::IDRUSB()
 {
@@ -22,7 +23,7 @@ void IDRUSB::putRequest(uint8_t cmd, uint8_t para, uint8_t *data, uint16_t dataS
     uint8_t buffer[0x10000];
     int len;
 
-    IDRRequest request = (IDRRequest)buffer;
+    IDRRequest request = reinterpret_cast<IDRRequest>(buffer);
     memcpy(request->preamble, iDRPreamble, sizeof (iDRPreamble));
     request->len = htons(3 + dataSize);
     request->cmd = cmd;
@@ -52,7 +53,7 @@ IDRResponse IDRUSB::getResponse()
     libusb_bulk_transfer(handle, ep1i_addr, buffer, sizeof(buffer), &len, 200);
     libusb_bulk_transfer(handle, ep5i_addr, buffer+headerLen, sizeof(buffer)-headerLen, &len, 200);
 
-    result = (IDRResponse)malloc(len+headerLen);
+    result = static_cast<IDRResponse>(malloc(len+headerLen));
     memcpy(result, buffer, len+headerLen);
     return result;
 }
@@ -89,11 +90,30 @@ bool IDRUSB::readCard()
     putRequest(0x30, 0x01);
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
     IDRResponse response = getResponse();
-    bool result = response->sw[2] == 0x90;
+    IDRReadCardData data = reinterpret_cast<IDRReadCardData>(response->data_and_chksum);
 
-    for (int i = 0; i < ntohs(response->len); ++i)
-        std::cout << std::hex << std::setfill('0') << std::setw(2) << static_cast<uint32_t>(response->data_and_chksum[i]) << " ";
-    std::cout << std::endl;
+    std::cout << "TOLLEN:" << ntohs(response->len);
+    bool result = response->sw[2] == 0x90;
+    if(result) {
+        std::cout << " TXTLEN:" << ntohs(data->textLen) << " PICLEN:" << ntohs(data->picLen) << std::endl;
+
+        char * textIn = reinterpret_cast<char*>(data->text);
+        size_t textInLen = sizeof (data->text);
+
+        char textOutBuf[sizeof(data->text)*2];
+        char * textOut = static_cast<char*>(textOutBuf);
+        size_t outLen = sizeof (textOutBuf);
+
+        iconv(iconv_open("UTF-8", "UCS-2"), &textIn, &textInLen, &textOut, &outLen);
+
+        std::cout << "TXT:" << std::endl;
+        std::cout << textOutBuf << std::endl;
+
+        std::cout << "PIC:" << std::endl;
+        for (int i = 0; i < ntohs(data->picLen); ++i)
+            std::cout << std::hex << std::setfill('0') << std::setw(2) << static_cast<uint32_t>(data->pic[i]) << " ";
+        std::cout << std::endl;
+    }
 
     free(response);
     return result;

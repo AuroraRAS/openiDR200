@@ -29,6 +29,15 @@ typedef struct iDRResponse {
     uint8_t data_and_chksum[1];
 }__attribute__ ((packed)) * IDRResponse;
 
+typedef struct iDRReadCardData {
+    uint16_t textLen;
+    uint16_t picLen;
+    // GB13000 UCS-2
+    uint8_t text[256];
+    uint8_t pic[1024];
+    uint8_t crc[1];
+}__attribute__ ((packed)) * IDRReadCardData;
+
 class IDRUSB
 {
     // put request
